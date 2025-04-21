@@ -1,0 +1,18 @@
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+    overflow: hidden;
+}
+
+body {
+	font-size: 16px;
+    font-weight: bold;
+	background: white;
+}
+
+canvas {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
