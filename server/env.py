@@ -1,11 +1,14 @@
 import gymnasium as gym
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.env import ExternalEnv
+import ray
+from ray.rllib.algorithms.ppo import PPO
 import numpy as np
 import zmq
 import time
 import queue
 from pprint import pprint
+import threading
 
 # networking btwn node.js and python
 ctx = zmq.Context()
@@ -13,6 +16,7 @@ socket = ctx.socket(zmq.REP)
 socket.bind("tcp://127.0.0.1:5555")
 
 print("connected")
+print(ray.__version__)
 
 actionQueue = queue.Queue()
 
@@ -39,9 +43,10 @@ class MyEnv(ExternalEnv, gym.Env):
     #     print('ending ep')
     #     self.end_episode(self.episode_id, self.observation_space.sample())
 
-    def step_env(self, obs, reward):
+    def step_env(self):#, obs, reward
         # SUPER TEMP
         obs = self.observation_space.sample()
+        reward = 0
         # temp
         print('starting')
         self.ep_id = self.start_episode()
@@ -66,71 +71,91 @@ class MyEnv(ExternalEnv, gym.Env):
     def step(self, action):
         return self.observation_space.sample(), 0.0, False, False, {}
     
-    def run(self):
-        # block execution until things are ready
-        print('awaiting dinner')
-        arr = self.queue.get()
+    # def run(self):
+    #     # block execution until things are ready
+    #     print('awaiting dinner')
+    #     arr = self.queue.get()
 
-        reward = arr[12]
-        # ended = arr[13] == 1
-        obs = arr[:-2]
+    #     reward = arr[12]
+    #     # ended = arr[13] == 1
+    #     obs = arr[:-2]
 
-        print('recieved')
-        pprint(obs)
-        print(reward)
-        # print(ended)
+    #     print('recieved')
+    #     pprint(obs)
+    #     print(reward)
+    #     # print(ended)
 
-        # if ended:
-        #     print('new round!')
-        #     self.finish_episode()
-        #     self.begin_episode()
+    #     # if ended:
+    #     #     print('new round!')
+    #     #     self.finish_episode()
+    #     #     self.begin_episode()
 
-        print('getting action!')
-        action = self.step_env(obs, reward)
+    #     print('getting action!')
+    #     action = self.step_env(obs, reward)
 
-        print('and... action')
-        pprint(action)
+    #     print('and... action')
+    #     pprint(action)
 
-        global actionQueue
-        actionQueue.put(action)
-    
+    #     global actionQueue
+    #     actionQueue.put(action)
 
+# # alg = config.build_algo()
 
-# # Point your config to your custom env class:
-# config = (
-#     PPOConfig()
-#     .environment(
-#         MyEnv,
-#     )
-#     # .env_runners(num_env_runners=0)
+# # instance.begin_episode()
+
+# instance = MyEnv()
+# instance.start()
+# # instance.begin_episode()
+
+ray.init()
+
+# Create the environment instance
+# env = MyEnv()
+
+# Start the environment's RPC server (must be in a separate thread)
+import threading
+# threading.Thread(target=env.start, daemon=True).start()
+
+# time.sleep(1)
+
+config = PPOConfig()
+
+# Force use of the old API stack
+config.enable_rl_module_and_learner = False
+config._enable_new_api_stack = False
+# config.api_stack(
+#     enable_rl_module_and_learner=False,
+#     enable_env_runner_and_connector_v2=False,
 # )
 
-# alg = config.build_algo()
+# config.environment(MyEnv)
+# config.framework("torch")
+# config.num_workers = 0
 
-# instance.begin_episode()
+trainer = config.build()
 
-instance = MyEnv()
-instance.start()
-# instance.begin_episode()
+# .rollouts(num_rollout_workers=0)
 
 print('round 1, fight!')
 
-# python's job is [input, reward] -> action
-try:
-    while True:
-        msg = socket.recv()
-        arr = np.frombuffer(msg, dtype=np.float32)
+# env.step_env()
 
-        instance.queue.put(arr)
+# # python's job is [input, reward] -> action
+# try:
+#     while True:
+#         msg = socket.recv()
+#         arr = np.frombuffer(msg, dtype=np.float32)
 
-        # now we wait
-        action = actionQueue.get()
+#         env.queue.put(arr)
 
-        socket.send(action.astype(np.float32).tobytes())
+#         # now we wait
+#         action = actionQueue.get()
 
-        time.sleep(0.005)
-except KeyboardInterrupt:
-    print("\nShutting down gracefully...")
-finally:
-    socket.close()
-    ctx.term()
+#         socket.send(action.astype(np.float32).tobytes())
+
+#         time.sleep(0.005)
+# except KeyboardInterrupt:
+#     print("\nShutting down gracefully...")
+# finally:
+#     socket.close()
+#     ctx.term()
