@@ -3,12 +3,13 @@
 	padding: 0;
 	box-sizing: border-box;
     overflow: hidden;
+    color: white;
 }
 
 body {
 	font-size: 16px;
     font-weight: bold;
-	background: white;
+	background-color: black;
 }
 
 canvas {

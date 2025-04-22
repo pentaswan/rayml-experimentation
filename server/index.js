@@ -1,4 +1,3 @@
-import '../client/shared.js';
 import Game from './game.js';
 import uWS from 'uWebSockets.js';
 import fs from 'fs';
@@ -15,9 +14,11 @@ function generateId(){
 
 const clients = {};
 const PORT = 3000;
+const inputToArr = ['up','down','left','right','heavy'];
+
 global.app = uWS.App().ws('/*', {
     compression: 0,
-    maxPayloadLength: 8,
+    maxPayloadLength: 1,
     idleTimeout: 0,
     open: (ws) => {
         ws.game = new Game();
@@ -27,21 +28,18 @@ global.app = uWS.App().ws('/*', {
     },
     message: (ws, data) => {
         const u8 = new Uint8Array(data);
-        
-        if(u8.byteLength === 8){
-            // angle, mag
-            const f32 = new Float32Array(u8.buffer);
 
-            const p = ws.game.player;
-            p.input.angle = f32[0] % (Math.PI * 2);
-            p.input.mag = Math.min(1, Math.max(0, f32[1]));
-        } else if(u8.byteLength === 1){
-            const p = ws.game.player;
-            if(u8[0] === 1){
-                p.input.boost = true;
-            } else if(u8[0] === 2){
-                p.input.boost = false;
-            }
+        // only 1 message, and it's 1 byte long
+
+        if(u8.byteLength !== 1) return;
+
+        let byte = u8[0];
+        const state = (byte & (1 << 6)) !== 0;
+        byte = byte & (~(1 << 6));
+        const input = inputToArr[byte];
+
+        if(input !== undefined){
+            ws.game.player.input[input] = state;
         }
     },
     close: (ws) => {
@@ -60,8 +58,7 @@ async function simulate(){
     for(let key in clients){
         const g = clients[key].game;
         await g.simulate();
-        g.updatePack();
-        send(clients[key], g.pack);
+        g.sendUpdatePack(clients[key]);
     }
 
     setTimeout(simulate, 1000 / 60);

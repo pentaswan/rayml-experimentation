@@ -1,108 +1,122 @@
-const angleFric = 0.68;
-const positionFric = 0.952;
-
-const angleDist = Math.PI / 6;
-const anglesDif = Math.PI / 6;
-
-const maxBiteCooldown = 150;
-
-const moveSpeed = 0.006;
-const boostSpeed = 0.15;
-const angularSpeed = 0.00475;
-const biteBoost = 0.045;
-
 import { Request } from "zeromq";
+import SAT from 'sat';
 
 let connected = false;
 const socket = new Request();
 
+const w = 1600;
+const h = 900;
+
+const pw = w * 1/3;
+const py = h * 3/5;
+const platform = [
+    {
+        x: w / 2 - pw/2,
+        y: py
+    },
+    {
+        x: w / 2 + pw/2,
+        y: py
+    },
+]
+
+const minY = 300;
+const maxY = 520;
+
+const minX = 0;
+const maxX = w;
+
+const maxV = 10;
+const res = new SAT.Response();
+
+const platformSAT = new SAT.Polygon(new SAT.Vector(), [
+    new SAT.Vector(platform[0].x, platform[0].y),
+    new SAT.Vector(platform[1].x, platform[1].y),
+])
+
+function clamp(t, min, max){
+    return Math.max(min, Math.min(max, t));
+}
+
+function between(t, min, max){
+    return clamp((t - min) / (max - min), 0, 1);
+    // (this.player.y - minY) / (maxY - minY)
+}
+
 class Game {
     constructor(){
-        this.player = {
-            x: -220,
-            y: 0,
-            r: 120 / scaleFac,
-            angle: 0,
-            av: 0, aa: 0,
-            xv: 0, yv: 0,
-            hp: 10,
-            boostCooldown: maxBoostCooldown,
-        }
+        this.reset();
 
-        this.player.input = {
-            angle: 0,
-            mag: 0,// normalized
-            boost: false
-        }
-
-        this.enemy = structuredClone(this.player);
-        this.enemy.x = -this.player.x;
-        this.enemy.angle = Math.PI;
-        this.enemy.input.angle = Math.PI;
-
-        this.biteCooldown = 0;
         this.reward = 0;
 
-        this.pack = new Float32Array(8);
+        this.updatePack = new Float32Array(8);
+        this.scoreBuf = new Uint16Array(2);
+        this.changedScore = false;
+        this.episodeEnded = false;
 
-        this.initMsg();
+        this.enemyScore = this.playerScore = 0;
     }
 
-    updatePack(){
-        this.pack[0] = this.player.x;
-        this.pack[1] = this.player.y;
-        this.pack[2] = this.player.angle;
-        this.pack[3] = this.player.hp;
+    reset(){
+        let lastInputs;
+        if(this.player !== undefined){
+            lastInputs = this.player.input;
+        }
+        this.player = {
+            x: w * 1/3 + 56, y: h * 1/2, r: 35, jumpCooldown: 0, maxJumpCooldown: 5,
+            xv: 0, yv: 0, heavy: false, mass: 1, canJump: false,
+            input: {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+                heavy: false
+            }
+        }
+        
+        this.enemy = structuredClone(this.player);
+    
+        this.enemy.x = w - this.player.x;
 
-        this.pack[4] = this.enemy.x;
-        this.pack[5] = this.enemy.y;
-        this.pack[6] = this.enemy.angle;
-        this.pack[7] = this.enemy.hp;
+        if(lastInputs !== undefined){
+            this.player.input = structuredClone(lastInputs);
+        }
     }
 
-    // still has to be between 0 and 2pi
-    normalizeAngle(a){
-        return (a / (Math.PI * 2) % 1) * 2 - 1 
-    }
+    sendUpdatePack(ws){
+        this.updatePack[0] = this.player.x;
+        this.updatePack[1] = this.player.y;
+        this.updatePack[2] = this.player.heavy;
 
-    // angular accel
-    normalizeAA(a){
-        return a / (Math.PI * angularSpeed / (1 - angleFric))
-    }
+        this.updatePack[3] = this.enemy.x;
+        this.updatePack[4] = this.enemy.y;
+        this.updatePack[5] = this.enemy.heavy;
 
-    getAIInputs(){
-        // len=16
-        return Buffer.from(new Float32Array([
-            (this.player.x - this.enemy.x) / (arenaRadius * 2),
-            (this.player.y - this.enemy.y) / (arenaRadius * 2),
+        send(ws, this.updatePack);
 
-            this.normalizeAngle(this.player.angle),
-            this.player.av / 0.01,
-            this.normalizeAA(this.player.aa),
-            this.player.xv / 2.5,
-            this.player.yv / 2.5,
-
-            this.normalizeAngle(this.enemy.angle),
-            this.enemy.av / 0.01,
-            this.normalizeAA(this.enemy.aa),
-            this.enemy.xv / 2.5,
-            this.enemy.yv / 2.5,
-
-            Math.max(0, this.player.boostCooldown / maxBoostCooldown),
-            Math.max(0, this.enemy.boostCooldown / maxBoostCooldown),
-
-            // this.player.input.angle,
-            // this.player.input.mag,
-            this.player.input.boost ? 1 : 0,
-
-            this.reward// last reward
-        ]).buffer);
+        if(this.changedScore){
+            this.scoreBuf[0] = this.playerScore;
+            this.scoreBuf[1] = this.enemyScore;
+            send(ws, this.scoreBuf);
+            this.changedScore = false;
+        }
     }
 
     async simulate(){
-        // console.log(this.player.input.mag, this.player.input.angle);
-        // get the input
+        await this.getAIInputs();
 
+        this.simulatePlayer(this.player);
+        this.simulatePlayer(this.enemy);
+
+        // this.reward += clamp((this.enemy.x - w / 2), platform[0].x, platform[1].x) / w;
+        this.reward -= clamp((this.player.x - w / 2), platform[0].x, platform[1].x) / w * 1/2;
+
+        this.collidePlayers();
+
+        return true;
+    }
+
+    async getAIInputs(){
         if(connected === false){
             await socket.connect("tcp://127.0.0.1:5555");
             connected = true;
@@ -110,7 +124,10 @@ class Game {
         }
 
         // send a message. When we recieve it we'll do simulation and reward (the below fn)
-        await socket.send(this.getAIInputs());
+        await socket.send(this._getAIInputs());
+
+        this.reward = 0;
+        this.episodeEnded = false;
 
         const [msg] = await socket.receive();  // This gives you a Buffer
         const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
@@ -118,128 +135,139 @@ class Game {
         console.log("Got:", received);
     }
 
-    initMsg(){
-        // sock.on("message", (msg) => {
-        //     const response = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
-        //     console.log("Got back:", response);
+    _getAIInputs(){
+        // len=14
+        return Buffer.from(new Float32Array([
+            between(this.player.x, minX, maxX),
+            between(this.player.y, minY, maxY),
 
-        //     // simulate the node.js
-        //     this._simulate();
-        // });
+            between(this.player.xv, -maxV, maxV),
+            between(this.player.yv, -maxV, maxV),
+
+            this.player.heavy ? 0 : 1,
+            this.player.canJump ? 0 : 1,
+
+            between(this.enemy.x, minX, maxX),
+            between(this.enemy.y, minY, maxY),
+
+            between(this.enemy.xv, -maxV, maxV),
+            between(this.enemy.yv, -maxV, maxV),
+
+            this.enemy.heavy ? 0 : 1,
+            this.enemy.canJump ? 0 : 1,
+
+            this.reward,// last reward
+            this.episodeEnded ? 1 : 0
+        ]).buffer);
     }
 
+    simulatePlayer(p){
+        const gravity = .2;
+        const spd = .18;
+        const jumpForce = 42;
 
-    _simulate(){
-        this.reward = 0;
+        const i = p.input;
+        
+        p.mass = (i.heavy ? 1.8 : 1) / spd;
+        p.heavy = i.heavy;
 
-        this.simulateP(this.player);
-        this.simulateP(this.enemy);
+        p.xv += (i.right - i.left) / p.mass;
 
-        this.reward -= Math.sqrt((this.player.x - this.enemy.x) ** 2 + (this.player.y - this.enemy.y) ** 2) / arenaRadius;
+        p.yv += gravity;
 
-        this.biteCooldown--;
-
-        const result = this.tailbite();
-        if(result !== false){
-            let accel = biteBoost / (1 - positionFric);
-            if(result === 'enemy bitten'){
-                this.player.xv -= Math.cos(this.player.angle) * accel * 4;
-                this.player.yv -= Math.sin(this.player.angle) * accel * 4;
-
-                this.enemy.xv += Math.cos(this.enemy.angle) * accel;
-                this.enemy.yv += Math.sin(this.enemy.angle) * accel;
-
-                this.enemy.hp--;
-            } else {
-                this.player.xv += Math.cos(this.player.angle) * accel * 4;
-                this.player.yv += Math.sin(this.player.angle) * accel * 4;
-
-                this.enemy.xv -= Math.cos(this.enemy.angle) * accel;
-                this.enemy.yv -= Math.sin(this.enemy.angle) * accel;
-
-                this.player.hp--;
-            }
-        }
-    }
-
-    simulateP(p){
-        const desiredAngle = p.input.angle; //p.angle + Math.PI * 0.999
-        p.aa = shortAngleDist(p.angle, desiredAngle) * angularSpeed / (1 - angleFric);
-        p.av += p.aa;
-
-        p.angle += p.av;
-        if(p.angle < 0) p.angle += Math.PI * 2;
-
-        p.av *= angleFric;
-
-        let accel = p.input.mag * moveSpeed / (1 - positionFric);
-
-        if(p.input.boost === true && p.boostCooldown < 0 && p === this.player){
-            p.boostCooldown = maxBoostCooldown;
-            accel += boostSpeed / (1 - positionFric);
-            p.input.boost = false;
+        p.jumpCooldown--;
+        if(p.canJump === true && p.jumpCooldown < 0 && p.yv >= 0.01){
+            p.jumpCooldown = p.maxJumpCooldown;
+            p.yv -= i.up * jumpForce / p.mass;
         }
 
-        const xa = Math.cos(desiredAngle) * accel;
-        const ya = Math.sin(desiredAngle) * accel;
-
-        p.xv += xa;
-        p.yv += ya;
+        p.yv += (i.down * 3 - i.up) / p.mass / 3;
 
         p.x += p.xv;
         p.y += p.yv;
+    }
 
-        p.xv *= positionFric;
-        p.yv *= positionFric;
+    collidePlayers(){
+        // with each other
+        const p = this.player; const e = this.enemy;
+        const dist = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
+        let col = false;
+        if(dist < p.r + e.r){
+            col = true;
+            const angle = Math.atan2(p.y - e.y, p.x - e.x);
 
-        p.boostCooldown--;
 
-        if(p.x**2 + p.y**2 > (arenaRadius - p.r) ** 2){
-            const angle = Math.atan2(p.y, p.x);
-            p.x = Math.cos(angle) * (arenaRadius - p.r);
-            p.y = Math.sin(angle) * (arenaRadius - p.r);
+            const ratio = e.mass / (p.mass + e.mass);
+            const distToMove = (p.r + e.r - dist);
+
+            let dx = Math.cos(angle) * distToMove * ratio;
+            let dy = Math.sin(angle) * distToMove * ratio;
+
+            p.x += dx;
+            p.y += dy;
+
+            let tmpX = p.xv;
+            let tmpY = p.yv;
+
+            let heavyAdv = 'n';
+            if(p.heavy && !e.heavy) heavyAdv = 'p';
+            else if(!p.heavy && e.heavy) heavyAdv = 'e';
+
+            p.xv = e.xv * (heavyAdv === 'e' ? 1.8 : 1);
+            p.yv = e.yv * (heavyAdv === 'e' ? 1.8 : 1);
+
+            e.xv = tmpX * (heavyAdv === 'p' ? 1.8 : 1);
+            e.yv = tmpY * (heavyAdv === 'p' ? 1.8 : 1);
+
+            dx = Math.cos(angle) * distToMove * (1 - ratio);
+            dy = Math.sin(angle) * distToMove * (1 - ratio);
+
+            e.x -= dx;
+            e.y -= dy;
+
+            this.reward += 0.01;
+        }
+
+        this.boundPlayerFloor(p);
+        this.boundPlayerFloor(e);
+
+        if(col === true){
+            if(p.y > e.y) p.canJump = true;
+            if(e.y > p.y) e.canJump = true;
+        }
+
+        if(p.y > 600 && p.yv > 0 || e.y > 600 && e.yv > 0){
+            if(e.y > 600 && e.yv > 0){
+                this.playerScore++;
+
+                this.reward -= 10;
+            }
+            else if(p.y > 600 && p.yv > 0){
+                this.enemyScore++;
+
+                this.reward += 10;
+            }
+            this.reset()
+            this.changedScore = this.episodeEnded = true;
         }
     }
 
+    boundPlayerFloor(p){
+        const playerSAT = new SAT.Circle(new SAT.Vector(p.x, p.y), p.r);
 
-    aBitingB(a,b){
-        const angleBetween = shortAngleDist(a.angle, b.angle);
-        if(Math.abs(angleBetween) > angleDist) return false;
+        let collided = SAT.testPolygonCircle(platformSAT, playerSAT, res);
 
-        if((a.x-b.x)**2 + (a.y-b.y)**2 > (a.radius+b.radius)**2) return false;
+        if(collided === true){
+            p.x += res.overlapV.x;
+            p.y += res.overlapV.y;
 
-        const physicalAngleBetween = Math.atan2(a.y - b.y, a.x - b.x);
+            p.xv *= 0.99;
+            if(Math.abs(res.overlapV.x) < 0.01) p.yv = 0;
+        }
 
-        const dif = shortAngleDist(physicalAngleBetween, a.angle);
+        p.canJump = collided;
 
-        if(Math.abs(shortAngleDist(Math.PI,dif)) < anglesDif || Math.abs(dif) < anglesDif) return true;
-
-        return false;
-    }
-
-    tailbite(){
-        if(this.biteCooldown > 0) return false;
-        if((this.player.x - this.enemy.x) ** 2 + (this.player.y - this.enemy.y) ** 2 > (this.enemy.r + this.player.r) ** 2) return false;
-        if(this.aBitingB(this.player, this.enemy) === false && this.aBitingB(this.enemy, this.player) === false) return false;
-
-        // otherwise, find out who's being bit.
-
-        const averageAngle = interpolateDirection(this.player.angle, this.enemy.angle, 0.5);
-
-        const vec = [
-            Math.cos(averageAngle),
-            Math.sin(averageAngle)
-        ];
-    
-        // comparing the x,y dot this vector will give us which is further as a consequence of the projection formula v*w / mag * v (mag is irrelevant and it's parametrized in terms of v so v's coef which is what we want to compare is just v*w)
-        
-        const pdot = this.player.x * vec[0] + this.player.y * vec[1];
-        const odot = this.enemy.x * vec[0] + this.enemy.y * vec[1];
-
-        this.biteCooldown = maxBiteCooldown;
-
-        if(pdot > odot) return 'player bitten';
-        else return 'enemy bitten';
+        res.clear();
     }
 }
 
