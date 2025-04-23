@@ -61,8 +61,10 @@ async function simulate(){
         g.sendUpdatePack(clients[key]);
     }
 
-    setTimeout(simulate, 1000 / 60);
+    // setTimeout(simulate, 1000 / 60);
 }
+
+setInterval(simulate, 1000 / 60)
 
 simulate();
 
