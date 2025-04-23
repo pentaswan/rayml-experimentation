@@ -1,157 +1,117 @@
-import gymnasium as gym
 from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.env import ExternalEnv
-import ray
-from ray.rllib.algorithms.ppo import PPO
+from ray.rllib.core.rl_module.rl_module import RLModuleSpec
+from ray.rllib.models.catalog import ModelCatalog
+
+import gymnasium as gym
+from queue import Queue
+
+from pprint import pprint
+import torch.nn as nn
 import numpy as np
+import ray
+import torch
 import zmq
 import time
-import queue
-from pprint import pprint
-import threading
 
-# networking btwn node.js and python
-ctx = zmq.Context()
-socket = ctx.socket(zmq.REP)
-socket.bind("tcp://127.0.0.1:5555")
+class MyEnvSimulator:
+    def __init__(self, trainer):
+        self.trainer = trainer
+        self.obs_queue = Queue()
+        self.reward_queue = Queue()
+        self.action_queue = Queue()
+        self.reset()
+        self.module = self.trainer.get_module()
+        self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32)
+        self.dist_cls = ModelCatalog.get_action_dist(self.action_space, framework="torch")
 
-print("connected")
-print(ray.__version__)
+    def reset(self):
+        self.total_reward = 0
 
-actionQueue = queue.Queue()
+    def run(self):
+        while True:
+            obs = self.obs_queue.get()
+            reward = self.reward_queue.get()
+            # terminated = False
 
-class MyEnv(ExternalEnv, gym.Env):
-    def __init__(self, config=None):
+            out = self.module.forward_inference({"obs": obs})
+
+            action_dist = self.dist_cls(out["action_dist_inputs"], self.action_space)
+
+            action = action_dist.sample()
+
+            pprint(action)
+            # action = out["action_dist_inputs"].sample()
+            self.action_queue.put(action)
+
+class DummyEnv(gym.Env):
+    def __init__(self, observation_space=None, action_space=None, inference_only=None, model_config=None, catalog_class=None):
         self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(12,), dtype=np.float32)
-
-        # up, down, left, right, heavy
-        self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(5,), dtype=np.float32)
-
-        self.reward = 0
-        self.inputs = self.observation_space.sample()
-
-        self.ep_id = None
-
-        self.queue = queue.Queue()
-
-        super().__init__(self.action_space, self.observation_space)
-    # def begin_episode(self):
-    #     print('beginning ep')
-    #     self.episode_id = self.start_episode()
-    
-    # def finish_episode(self):
-    #     print('ending ep')
-    #     self.end_episode(self.episode_id, self.observation_space.sample())
-
-    def step_env(self):#, obs, reward
-        # SUPER TEMP
-        obs = self.observation_space.sample()
-        reward = 0
-        # temp
-        print('starting')
-        self.ep_id = self.start_episode()
-
-        print('getting')
-        print(self.ep_id)
-        action = self.get_action(self.ep_id, obs)
-
-        print('logging')
-        self.log_returns(self.ep_id, reward)
-
-        # temp
-        print('ending')
-        self.end_episode(self.ep_id, self.observation_space.sample())
-        print('returning')
-        return action
-    
-    # Minimal stubs to satisfy gymnasium.Env checks
-    def reset(self, *, seed=None, options=None):
+        self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32)
+    def reset(self):
         return self.observation_space.sample(), {}
 
     def step(self, action):
-        return self.observation_space.sample(), 0.0, False, False, {}
-    
-    # def run(self):
-    #     # block execution until things are ready
-    #     print('awaiting dinner')
-    #     arr = self.queue.get()
-
-    #     reward = arr[12]
-    #     # ended = arr[13] == 1
-    #     obs = arr[:-2]
-
-    #     print('recieved')
-    #     pprint(obs)
-    #     print(reward)
-    #     # print(ended)
-
-    #     # if ended:
-    #     #     print('new round!')
-    #     #     self.finish_episode()
-    #     #     self.begin_episode()
-
-    #     print('getting action!')
-    #     action = self.step_env(obs, reward)
-
-    #     print('and... action')
-    #     pprint(action)
-
-    #     global actionQueue
-    #     actionQueue.put(action)
-
-# # alg = config.build_algo()
-
-# # instance.begin_episode()
-
-# instance = MyEnv()
-# instance.start()
-# # instance.begin_episode()
+        return self.observation_space.sample(), 0.0, False, {}
 
 ray.init()
 
-# Create the environment instance
-# env = MyEnv()
+config = (
+    PPOConfig()
+    .environment(DummyEnv)
+    .rl_module(
+        rl_module_spec=RLModuleSpec(
+            observation_space=gym.spaces.Box(low=0.0, high=1.0, shape=(12,), dtype=np.float32),
+            action_space=gym.spaces.Box(low=0.0, high=1.0, shape=(3,), dtype=np.float32),
+            model_config={
+                "fcnet_hiddens": [64, 64]
+            }
+        )
+    )
+)
 
-# Start the environment's RPC server (must be in a separate thread)
+trainer = config.build_algo()
+
+
+sim = MyEnvSimulator(trainer)
+
 import threading
-# threading.Thread(target=env.start, daemon=True).start()
+threading.Thread(target=sim.run, daemon=True).start()
 
-# time.sleep(1)
+# external simulation:
+obs = torch.tensor([[0.,0.,0.,0., 0.,0.,0.,0., 0.,0.,0.,0.]], dtype=torch.float32)#np.zeros((12,), dtype=np.float32)
+done = False
+reward = 0.5
 
-config = PPOConfig()
+sim.obs_queue.put(obs)
+sim.reward_queue.put(reward)
 
-# Force use of the old API stack
-config.enable_rl_module_and_learner = False
-config._enable_new_api_stack = False
-# config.api_stack(
-#     enable_rl_module_and_learner=False,
-#     enable_env_runner_and_connector_v2=False,
-# )
+action = sim.action_queue.get()
 
-# config.environment(MyEnv)
-# config.framework("torch")
-# config.num_workers = 0
+print('action!')
+pprint(action)
 
-trainer = config.build()
+# ctx = zmq.Context()
+# socket = ctx.socket(zmq.REP)
+# socket.bind("tcp://127.0.0.1:5555")
 
-# .rollouts(num_rollout_workers=0)
+# print("connected")
 
-print('round 1, fight!')
-
-# env.step_env()
-
-# # python's job is [input, reward] -> action
+# python's job is [input, reward] -> action
 # try:
 #     while True:
 #         msg = socket.recv()
 #         arr = np.frombuffer(msg, dtype=np.float32)
 
-#         env.queue.put(arr)
+#         sim.queue.put(torch.from_numpy(arr))
 
-#         # now we wait
-#         action = actionQueue.get()
+#         # wait for action
+#         action = sim.action_queue.get()
 
-#         socket.send(action.astype(np.float32).tobytes())
+#         # print('action!')
+#         # pprint(action)
+
+#         # .astype(np.float32)
+#         socket.send(action.numpy().astype(np.float32).tobytes())
 
 #         time.sleep(0.005)
 # except KeyboardInterrupt:

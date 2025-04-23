@@ -132,7 +132,15 @@ class Game {
         const [msg] = await socket.receive();  // This gives you a Buffer
         const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
 
-        console.log("Got:", received);
+        // console.log("Got:", received);
+
+        if(received[0] < -0.25) this.enemy.input.right = true;
+        else if(received[0] > 0.25) this.enemy.input.left = true;
+
+        if(received[1] < -0.25) this.enemy.input.up = true;
+        else if(received[1] > 0.25) this.enemy.input.down = true;
+
+        if(received[2] > 0.25) this.enemy.input.heavy = true;
     }
 
     _getAIInputs(){
