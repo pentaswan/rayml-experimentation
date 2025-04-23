@@ -43,6 +43,26 @@ function between(t, min, max){
     // (this.player.y - minY) / (maxY - minY)
 }
 
+function dot(v1, v2){
+    return v1[0] * v2[0] + v1[1] * v2[1];
+}
+
+function mag(v){
+    return Math.sqrt(v[0] ** 2 + v[1] ** 2);
+}
+
+const cos = Math.cos; const sin = Math.sin;
+function rotateVec(v, t){
+    return [
+        cos(t) * v[0] - sin(t) * v[1],
+        sin(t) * v[0] + cos(t) * v[1]
+    ]
+    // const rotationMatrix = [
+    //     [cos(t), -sin(t)],
+    //     [sin(t), cos(t)]
+    // ]
+}
+
 class Game {
     constructor(){
         this.reset();
@@ -103,7 +123,7 @@ class Game {
     }
 
     async simulate(){
-        await this.getAIInputs();
+        // await this.getAIInputs();
 
         this.simulatePlayer(this.player);
         this.simulatePlayer(this.enemy);
@@ -204,7 +224,6 @@ class Game {
             col = true;
             const angle = Math.atan2(p.y - e.y, p.x - e.x);
 
-
             const ratio = e.mass / (p.mass + e.mass);
             const distToMove = (p.r + e.r - dist);
 
@@ -214,24 +233,42 @@ class Game {
             p.x += dx;
             p.y += dy;
 
-            let tmpX = p.xv;
-            let tmpY = p.yv;
-
-            let heavyAdv = 'n';
-            if(p.heavy && !e.heavy) heavyAdv = 'p';
-            else if(!p.heavy && e.heavy) heavyAdv = 'e';
-
-            p.xv = e.xv * (heavyAdv === 'e' ? 1.8 : 1);
-            p.yv = e.yv * (heavyAdv === 'e' ? 1.8 : 1);
-
-            e.xv = tmpX * (heavyAdv === 'p' ? 1.8 : 1);
-            e.yv = tmpY * (heavyAdv === 'p' ? 1.8 : 1);
-
             dx = Math.cos(angle) * distToMove * (1 - ratio);
             dy = Math.sin(angle) * distToMove * (1 - ratio);
 
             e.x -= dx;
             e.y -= dy;
+
+            let m1 = p.heavy ? 1.8 : 1;
+            let m2 = e.heavy ? 1.8 : 1;
+            if(p.heavy && e.heavy) m1 = m2 = 1;
+
+            const Pvec = [
+                p.xv,
+                p.yv
+            ]
+    
+            const Evec = [
+                e.xv,
+                e.yv
+            ]
+    
+            let [v_x1, v_y1] = rotateVec(Pvec, -angle);
+            let [v_x2, v_y2] = rotateVec(Evec, -angle);
+    
+            const delta = this.computeDelta(m1, m2, v_x1, v_y1, v_x2, v_y2);
+    
+            v_x1 += delta * m2;
+            v_x2 -= delta * m1;
+    
+            [v_x1, v_y1] = rotateVec([v_x1, v_y1], angle);
+            [v_x2, v_y2] = rotateVec([v_x2, v_y2], angle);
+    
+            p.xv = v_x1;
+            p.yv = v_y1;
+
+            e.xv = v_x2;
+            e.yv = v_y2;
 
             this.reward += 0.01;
         }
@@ -258,6 +295,26 @@ class Game {
             this.reset()
             this.changedScore = this.episodeEnded = true;
         }
+    }
+
+    computeDelta(m1, m2, v_x1, v_y1, v_x2, v_y2){
+        const sqrt = Math.sqrt;
+
+        const A = 2 * (m1 ** 2) * (m2 ** 2);
+
+        const B = 2 * v_x1 * (m1 ** 2) * m2 - 2 * v_x2 * (m2 ** 2) * m1;
+
+        const C = 2 * m1 * m2 * sqrt((v_x1 ** 2 + v_y1 ** 2) * (v_x2 ** 2 + v_y2 ** 2));
+
+        return sqrt(C / A + B ** 2 / (4 * A ** 2)) - B / (2*A);
+
+        // const bigSqrt = sqrt((v_x1 ** 2 + v_y1 ** 2) * (v_x2 ** 2 + v_y2 ** 2));
+
+        // const A = bigSqrt;
+
+        // const B = (v_x1 - v_x2);
+
+        // return sqrt(A + (B ** 2) / 2) - B / 2;
     }
 
     boundPlayerFloor(p){
