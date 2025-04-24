@@ -54,17 +54,21 @@ global.app = uWS.App().ws('/*', {
     }
 }, );
 
+let lastDone = true;
 async function simulate(){
+    lastDone = false;
     for(let key in clients){
         const g = clients[key].game;
         await g.simulate();
         g.sendUpdatePack(clients[key]);
     }
 
-    // setTimeout(simulate, 1000 / 60);
+    lastDone = true;
 }
 
-setInterval(simulate, 1000 / 60)
+setInterval(() => {
+    if(lastDone) simulate();
+}, 1000 / 60)
 
 simulate();
 

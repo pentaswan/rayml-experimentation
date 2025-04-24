@@ -123,7 +123,7 @@ class Game {
     }
 
     async simulate(){
-        // await this.getAIInputs();
+        await this.getAIInputs();
 
         this.simulatePlayer(this.player);
         this.simulatePlayer(this.enemy);
@@ -154,13 +154,16 @@ class Game {
 
         // console.log("Got:", received);
 
-        if(received[0] < -0.25) this.enemy.input.right = true;
-        else if(received[0] > 0.25) this.enemy.input.left = true;
+        if(received[0] < 0) this.enemy.input.right = true;
+        else this.enemy.input.left = true;
 
-        if(received[1] < -0.25) this.enemy.input.up = true;
-        else if(received[1] > 0.25) this.enemy.input.down = true;
+        if(received[1] < 0) this.enemy.input.up = true;
+        else this.enemy.input.down = true;
 
-        if(received[2] > 0.25) this.enemy.input.heavy = true;
+        if(received[2] > 0) this.enemy.input.heavy = true;
+        else this.enemy.input.heavy = false;
+
+        // console.log(received);
     }
 
     _getAIInputs(){
