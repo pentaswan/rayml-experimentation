@@ -48,9 +48,9 @@ class Args:
     """total timesteps of the experiments"""
     learning_rate: float = 2.5e-4
     """the learning rate of the optimizer"""
-    num_envs: int = 1
+    num_envs: int = 2
     """the number of parallel game environments"""
-    num_steps: int = 128
+    num_steps: int = 1024# 256
     """the number of steps to run in each environment per policy rollout"""
     anneal_lr: bool = False
     """Toggle learning rate annealing for policy and value networks"""
@@ -193,7 +193,14 @@ if __name__ == "__main__":
 
     step = -1
     
-    def run_ppo_iter(inobs, toTrain):
+    def run_ppo_iter(inobs, toTrain, agentNum):
+        env = envs.envs[agentNum].unwrapped
+        env.external_feed(inobs)
+
+        # # environment steps both agents at once. So, run only on the second.
+        # if agentNum == 0:
+        #     return
+        
         global next_obs
         global next_done
         global start_time
@@ -209,8 +216,6 @@ if __name__ == "__main__":
         # globalEnv.external_feed(obs)
         step += 1
         # print('training!')
-        env = envs.envs[0].unwrapped
-        env.external_feed(inobs)
         # Annealing the rate if instructed to do so.
         # if args.anneal_lr:
         #     frac = 1.0 - (iteration - 1.0) / args.num_iterations
@@ -231,8 +236,14 @@ if __name__ == "__main__":
         logprobs[step] = logprob
 
         # TRY NOT TO MODIFY: execute the game and log data.
-        next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-        next_done = np.logical_or(terminations, truncations)
+        # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+        next_ob, single_reward, terminated, truncated, info = env.step(action.cpu().numpy())
+
+        # converting into np arrays but stepping a single agent at a time bc we want run run multiple in parallel.
+        next_obs = np.array([next_ob], dtype=np.float32)
+        reward = np.array([single_reward], dtype=np.float32)
+
+        next_done = np.array([terminated or truncated], dtype=np.bool) # np.logical_or(terminations, truncations)
         rewards[step] = torch.tensor(reward).to(device).view(-1)
         next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
@@ -243,8 +254,9 @@ if __name__ == "__main__":
         #             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
         #             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
 
-        # bootstrap value if not done
-        if step == args.num_steps - 1:
+        # if step == args.num_steps - 1:
+        if toTrain:
+            # bootstrap value if not done
             with torch.no_grad():
                 next_value = agent.get_value(next_obs).reshape(1, -1)
                 advantages = torch.zeros_like(rewards).to(device)
@@ -372,13 +384,15 @@ if __name__ == "__main__":
     # python's job is [input, reward] -> action
     try:
         while True:
-            if socket.poll(timeout=3):
+            if socket.poll(timeout=1):
                 msg = socket.recv()
                 arr = np.frombuffer(msg, dtype=np.float32)
 
-                toTrain = arr[2]#13
+                toTrain = arr[10] == 1
 
-                action = run_ppo_iter(arr, toTrain)
+                agentNum = int(arr[11])
+
+                action = run_ppo_iter(arr, toTrain, agentNum)
 
                 socket.send(action.numpy().astype(np.float32).tobytes())
 

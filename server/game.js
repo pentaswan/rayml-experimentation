@@ -1,5 +1,6 @@
 import { Request } from "zeromq";
 import SAT from 'sat';
+import { styleText } from 'node:util';
 
 let connected = false;
 const socket = new Request();
@@ -23,8 +24,9 @@ const platform = [
 const minY = 300;
 const maxY = 520;
 
-const minX = 0;
-const maxX = w;
+const minX = platform[0].x;// 0
+const maxX = platform[1].x;// w
+const halfX = w / 2;
 
 const maxV = 10;
 const res = new SAT.Response();
@@ -76,9 +78,14 @@ class Game {
         this.episodeEnded = false;
 
         this.enemyScore = this.playerScore = 0;
+
+        this.cumulativeReward = 0;
+        this.crTicks = 0;
+        this.lastCR = 0;
     }
 
     reset(){
+        this.tick = 0;
         let lastInputs;
         if(this.player !== undefined){
             lastInputs = this.player.input;
@@ -91,7 +98,8 @@ class Game {
                 down: false,
                 left: false,
                 right: false,
-                heavy: false
+                heavy: false,
+                inverted: false
             }
         }
         
@@ -102,9 +110,12 @@ class Game {
         if(lastInputs !== undefined){
             this.player.input = structuredClone(lastInputs);
         }
+        this.playersTouched = false;
     }
 
     sendUpdatePack(ws){
+        if(ws.connected === false) return;
+
         this.updatePack[0] = this.player.x;
         this.updatePack[1] = this.player.y;
         this.updatePack[2] = this.player.heavy;
@@ -124,14 +135,41 @@ class Game {
     }
 
     async simulate(){
+        // console.log(Math.round(this.reward * 100) / 100);// Math.round(this.reward2 * 100) / 100
+        this.tick++;
+        if(this.tick > 500) {
+            this.reset();
+            this.cumulativeReward = 0;
+            this.episodeEnded = true;
+        }
+
+        this.cumulativeReward += /*this.reward +*/ this.reward2;
+        this.crTicks++;
+
+        if(this.crTicks === 500){
+            const reward = (this.cumulativeReward - this.lastCR) / 1000;
+            console.log(styleText(reward > 0 ? 'green' : 'red', reward.toString()));
+            console.log(this.cumulativeReward / 1000);
+            this.lastCR = this.cumulativeReward;
+            this.crTicks = 0;
+            this.cumulativeReward = 0;
+        }
+
         await this.getAIInputs(this.player);
+        this.episodeEnded = false;// so that we only train once
         await this.getAIInputs(this.enemy);
+
+        this.reward = this.reward2 = 0;
 
         this.simulatePlayer(this.player);
         this.simulatePlayer(this.enemy);
 
-        this.reward -= Math.abs(w / 2 - this.player.x) / w;
-        this.reward2 -= Math.abs(w / 2 - this.enemy.x) / w;
+        this.reward -= Math.abs(w / 2 - this.player.x) / w * 4;
+        this.reward2 -= Math.abs(w / 2 - this.enemy.x) / w * 4;
+
+        this.reward += 1 + this.tick / 3000;
+        this.reward2 += 1 + this.tick / 3000;
+
         // this.reward -= clamp((this.player.x - w / 2), platform[0].x, platform[1].x) / w * 1/2;
 
         // if(this.enemy.input.up){
@@ -151,15 +189,10 @@ class Game {
         }
 
         // TODO: idea for further testing: train w/o heavy or canjump and provide reward for agents moving closer to each other + more on collision. Also setInterval change to 0 
-        this.reward = this.player.input.right ? 1 : -1;
-        this.reward2 = this.enemy.input.left ? 1 : -1;
 
         // send a message. When we recieve it we'll do simulation and reward (the below fn)
-        await socket.send(p === this.player ? this._getP1AIInputs() : this._getP2AIInputs());
-
-        // console.log(this.reward.toFixed(2), this.reward2.toFixed(2))
-        this.reward = this.reward2 = 0;
-        this.episodeEnded = false;
+        const inputs = (p === this.player) ? this._getAIInputs(this.player, this.enemy) : this._getAIInputs(this.enemy, this.player);
+        await socket.send(inputs);
 
         const [msg] = await socket.receive();  // This gives you a Buffer
         const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
@@ -167,20 +200,25 @@ class Game {
         let actionInd = received[0];
 
         // l/r, u/d, h/n
-        const firstBit = (actionInd & 0x4) !== 0;
-        const secondBit = (actionInd & 0x2) !== 0;
-        const thirdBit = (actionInd & 0x1) !== 0;
+        const firstBit = (actionInd & 0x2) !== 0;
+        const secondBit = (actionInd & 0x1) !== 0;
+        // const thirdBit = (actionInd & 0x1) !== 0;
 
         p.input.right = p.input.left = p.input.up = p.input.down = false;
 
         if(firstBit) p.input.right = true;
         else p.input.left = true;
 
+        // if(p.input.inverted){
+        //     p.input.right = !p.input.right;
+        //     p.input.left = !p.input.left;
+        // }
+
         if(secondBit) p.input.up = true;
         else p.input.down = true;
 
-        if(thirdBit) p.input.heavy = true;
-        else p.input.heavy = false;
+        // if(thirdBit) p.input.heavy = true;
+        // else p.input.heavy = false;
 
         // this.reward = firstBit ? -1 : 1;
 
@@ -189,57 +227,29 @@ class Game {
         // else p.input.right = true;
     }
 
-    _getP1AIInputs(){
-        // len=14
+    _getAIInputs(p=this.player, o=this.enemy){
+        // len=8
+        // let inverted = p.x > halfX;
+        // p.input.inverted = inverted;
+        let inverted = false;
         return Buffer.from(new Float32Array([
-            -1,
-            // between(this.player.x, minX, maxX),
-            // between(this.player.y, minY, maxY),
+            between(inverted ? (w - p.x) : p.x, minX, maxX),
+            between(p.y, minY, maxY),
 
-            // between(this.player.xv, -maxV, maxV),
-            // between(this.player.yv, -maxV, maxV),
+            between(p.xv * (inverted ? -1 : 1), -maxV, maxV),
+            between(p.yv, -maxV, maxV),
 
-            // this.player.heavy ? -1 : 1,
-            // this.player.canJump ? -1 : 1,
+            between(inverted ? (w - o.x) : o.x, minX, maxX),
+            between(o.y, minY, maxY),
 
-            // between(this.enemy.x, minX, maxX),
-            // between(this.enemy.y, minY, maxY),
+            between(o.xv * (inverted ? -1 : 1), -maxV, maxV),
+            between(o.yv, -maxV, maxV),
 
-            // between(this.enemy.xv, -maxV, maxV),
-            // between(this.enemy.yv, -maxV, maxV),
+            inverted ? 1 : -1,
 
-            // this.enemy.heavy ? -1 : 1,
-            // this.enemy.canJump ? -1 : 1,
-
-            this.reward,// last reward
-            this.episodeEnded ? 1 : 0
-        ]).buffer);
-    }
-
-    _getP2AIInputs(){
-        // len=14
-        return Buffer.from(new Float32Array([
-            1,
-            // between(this.enemy.x, minX, maxX),
-            // between(this.enemy.y, minY, maxY),
-
-            // between(this.enemy.xv, -maxV, maxV),
-            // between(this.enemy.yv, -maxV, maxV),
-
-            // this.enemy.heavy ? -1 : 1,
-            // this.enemy.canJump ? -1 : 1,
-
-            // between(this.player.x, minX, maxX),
-            // between(this.player.y, minY, maxY),
-
-            // between(this.player.xv, -maxV, maxV),
-            // between(this.player.yv, -maxV, maxV),
-
-            // this.player.heavy ? -1 : 1,
-            // this.player.canJump ? -1 : 1,
-
-            this.reward2,
-            this.episodeEnded ? 1 : 0
+            p === this.player ? this.reward : this.reward2,// last reward
+            this.episodeEnded ? 1 : 0,
+            p === this.player ? 0 : 1,
         ]).buffer);
     }
 
@@ -274,59 +284,61 @@ class Game {
         const p = this.player; const e = this.enemy;
         const dist = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
         let col = false;
-        // if(dist < p.r + e.r){
-        //     col = true;
-        //     const angle = Math.atan2(p.y - e.y, p.x - e.x);
+        if(dist < p.r + e.r){
+            col = true;
+            const angle = Math.atan2(p.y - e.y, p.x - e.x);
 
-        //     const ratio = e.mass / (p.mass + e.mass);
-        //     const distToMove = (p.r + e.r - dist);
+            const ratio = e.mass / (p.mass + e.mass);
+            const distToMove = (p.r + e.r - dist);
 
-        //     let dx = Math.cos(angle) * distToMove * ratio;
-        //     let dy = Math.sin(angle) * distToMove * ratio;
+            let dx = Math.cos(angle) * distToMove * ratio;
+            let dy = Math.sin(angle) * distToMove * ratio;
 
-        //     p.x += dx;
-        //     p.y += dy;
+            p.x += dx;
+            p.y += dy;
 
-        //     dx = Math.cos(angle) * distToMove * (1 - ratio);
-        //     dy = Math.sin(angle) * distToMove * (1 - ratio);
+            dx = Math.cos(angle) * distToMove * (1 - ratio);
+            dy = Math.sin(angle) * distToMove * (1 - ratio);
 
-        //     e.x -= dx;
-        //     e.y -= dy;
+            e.x -= dx;
+            e.y -= dy;
 
-        //     let m1 = p.heavy ? 1.8 : 1;
-        //     let m2 = e.heavy ? 1.8 : 1;
-        //     if(p.heavy && e.heavy) m1 = m2 = 1;
+            let m1 = p.heavy ? 1.8 : 1;
+            let m2 = e.heavy ? 1.8 : 1;
+            if(p.heavy && e.heavy) m1 = m2 = 1;
 
-        //     const Pvec = [
-        //         p.xv,
-        //         p.yv
-        //     ]
+            const Pvec = [
+                p.xv,
+                p.yv
+            ]
     
-        //     const Evec = [
-        //         e.xv,
-        //         e.yv
-        //     ]
+            const Evec = [
+                e.xv,
+                e.yv
+            ]
     
-        //     let [v_x1, v_y1] = rotateVec(Pvec, -angle);
-        //     let [v_x2, v_y2] = rotateVec(Evec, -angle);
+            let [v_x1, v_y1] = rotateVec(Pvec, -angle);
+            let [v_x2, v_y2] = rotateVec(Evec, -angle);
     
-        //     const delta = this.computeDelta(m1, m2, v_x1, v_y1, v_x2, v_y2);
+            const delta = this.computeDelta(m1, m2, v_x1, v_y1, v_x2, v_y2);
     
-        //     v_x1 += delta * m2;
-        //     v_x2 -= delta * m1;
+            v_x1 += delta * m2;
+            v_x2 -= delta * m1;
     
-        //     [v_x1, v_y1] = rotateVec([v_x1, v_y1], angle);
-        //     [v_x2, v_y2] = rotateVec([v_x2, v_y2], angle);
+            [v_x1, v_y1] = rotateVec([v_x1, v_y1], angle);
+            [v_x2, v_y2] = rotateVec([v_x2, v_y2], angle);
     
-        //     p.xv = v_x1;
-        //     p.yv = v_y1;
+            p.xv = v_x1;
+            p.yv = v_y1;
 
-        //     e.xv = v_x2;
-        //     e.yv = v_y2;
+            e.xv = v_x2;
+            e.yv = v_y2;
 
-        //     this.reward += 0.1;
-        //     this.reward2 += 0.1;
-        // }
+            this.reward += 20;
+            this.reward2 += 20;
+
+            this.playersTouched = true;
+        }
 
         this.boundPlayerFloor(p);
         this.boundPlayerFloor(e);
@@ -340,14 +352,18 @@ class Game {
             if(e.y > 600 && e.yv > 0){
                 this.playerScore++;
 
-                this.reward -= 10;
-                this.reward2 += 10;
+                if(this.playersTouched) this.reward += 10;
+
+                this.reward2 -= 10;
+                if(!this.playersTouched) this.reward2 -= 20;
             }
             else if(p.y > 600 && p.yv > 0){
                 this.enemyScore++;
 
-                this.reward += 10;
-                this.reward2 -= 10;
+                this.reward -= 10;
+                if(!this.playersTouched) this.reward -= 20;
+
+                if(this.playersTouched) this.reward2 += 10;
             }
             this.reset()
             this.changedScore = this.episodeEnded = true;

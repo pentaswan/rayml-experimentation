@@ -18,31 +18,38 @@ const inputToArr = ['up','down','left','right','heavy'];
 
 global.app = uWS.App().ws('/*', {
     compression: 0,
-    maxPayloadLength: 1,
+    maxPayloadLength: 4,//1,
     idleTimeout: 0,
     open: (ws) => {
         ws.game = new Game();
 
         ws.id = generateId();
         clients[ws.id] = ws;
+
+        ws.connected = true;
     },
     message: (ws, data) => {
-        const u8 = new Uint8Array(data);
+        // const u8 = new Uint8Array(data);
 
-        // only 1 message, and it's 1 byte long
+        // // only 1 message, and it's 1 byte long
 
-        if(u8.byteLength !== 1) return;
+        // if(u8.byteLength !== 1) return;
 
-        let byte = u8[0];
-        const state = (byte & (1 << 6)) !== 0;
-        byte = byte & (~(1 << 6));
-        const input = inputToArr[byte];
+        // let byte = u8[0];
+        // const state = (byte & (1 << 6)) !== 0;
+        // byte = byte & (~(1 << 6));
+        // const input = inputToArr[byte];
 
-        if(input !== undefined){
-            ws.game.player.input[input] = state;
-        }
+        // if(input !== undefined){
+        //     ws.game.player.input[input] = state;
+        // }
+
+        const f32 = new Float32Array(data);
+
+        delay = f32[0];
     },
     close: (ws) => {
+        ws.connected = false;
         delete clients[ws.id];
         delete ws.game;
     },
@@ -54,21 +61,36 @@ global.app = uWS.App().ws('/*', {
     }
 }, );
 
-let lastDone = true;
+// let lastDone = true;
+let delay = 0;
+let lastUpdatePackTime = 0;
 async function simulate(){
-    lastDone = false;
+    // lastDone = false;
     for(let key in clients){
+        if(clients[key].connected === false) return;
+
         const g = clients[key].game;
         await g.simulate();
-        g.sendUpdatePack(clients[key]);
+
+        let now = Date.now();
+        if(now - lastUpdatePackTime > 1000 / 60){
+            g.sendUpdatePack(clients[key]);
+            lastUpdatePackTime = now;
+        }
     }
 
-    lastDone = true;
+    // lastDone = true;
+
+    if(delay === 0){
+        setImmediate(simulate);
+    } else {
+        setTimeout(simulate, delay);
+    }
 }
 
-setInterval(() => {
-    if(lastDone) simulate();
-}, 1000 / 60)
+// setInterval(() => {
+//     if(lastDone) simulate();
+// }, 1000 / 60)
 
 simulate();
 

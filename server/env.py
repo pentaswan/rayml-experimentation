@@ -7,15 +7,15 @@ import numpy as np
 class AsyncQueueEnv(gym.Env):
     def __init__(self):
         super().__init__()
-        self.observation_space = spaces.Box(low=-1, high=1, shape=(1,), dtype=np.float32)# 12
-        self.action_space = spaces.Discrete(8)
+        self.observation_space = spaces.Box(low=-1, high=1, shape=(9,), dtype=np.float32)# 12
+        self.action_space = spaces.Discrete(4)
 
         self.input_queue = queue.Queue()
-        self.current_obs = np.zeros(1, dtype=np.float32)
+        self.current_obs = np.zeros(9, dtype=np.float32)
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        self.current_obs = np.zeros(1, dtype=np.float32)
+        self.current_obs = np.zeros(9, dtype=np.float32)
         return self.current_obs, {}
 
     def step(self, action):
@@ -24,13 +24,13 @@ class AsyncQueueEnv(gym.Env):
         # print('waiting for obs!')
         arr = self.input_queue.get()
 
-        reward = arr[1]
-        ended = arr[2]# 13
+        reward = arr[9]
+        ended = arr[10]
 
         if(ended):
             self.reset()
 
-        next_obs = arr[0:1]
+        next_obs = arr[0:9]
 
         self.current_obs = next_obs
         terminated = False

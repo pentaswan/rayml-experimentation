@@ -51,12 +51,15 @@ function render() {
 
     renderLine(platform);
 
-    // renderScore();
+    renderScore();
 }
 
+let frameTime = 1000 / 60;
+let lerpCoef = 0.4;
+const ln = Math.log(lerpCoef);
 function updateInterpolate(p){
-    p.render.x = interpolate(p.render.x, p.x, 0.4);
-    p.render.y = interpolate(p.render.y, p.y, 0.4);
+    p.render.x = interpolate(p.render.x, p.x, 1 - Math.exp(ln, frameTime / (1000 / 60)));
+    p.render.y = interpolate(p.render.y, p.y, 1 - Math.exp(ln, frameTime / (1000 / 60)));
 }
 
 function interpolate(s,e,t){

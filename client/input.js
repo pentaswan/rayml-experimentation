@@ -24,23 +24,29 @@ const input = {
 function handleKey(e){
     if (e.repeat === true) return e.preventDefault();
 
-    if (Controls[e.code] != undefined) {
-        const key = Controls[e.code];
+    // if (Controls[e.code] != undefined) {
+    //     const key = Controls[e.code];
 
-        const num = {
-            up: 0,
-            down: 1,
-            left: 2,
-            right: 3,
-            heavy: 4
-        }[key];
+    //     const num = {
+    //         up: 0,
+    //         down: 1,
+    //         left: 2,
+    //         right: 3,
+    //         heavy: 4
+    //     }[key];
 
-        e.preventDefault();
+    //     e.preventDefault();
 
-        const buf = new Uint8Array(1);
-        buf[0] = num + (e.type === 'keydown' ? 1 << 6 : 0);
-        send(buf);
-    }
+    //     const buf = new Uint8Array(1);
+    //     buf[0] = num + (e.type === 'keydown' ? 1 << 6 : 0);
+    //     send(buf);
+    // }
+}
+
+function speed(spd=1000/60){
+    const f32 = new Float32Array(1);
+    f32[0] = frameTime = spd;
+    send(f32);
 }
 
 window.oncontextmenu = function (e) {
