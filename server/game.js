@@ -39,7 +39,7 @@ function clamp(t, min, max){
 }
 
 function between(t, min, max){
-    return clamp((t - min) / (max - min), 0, 1);
+    return clamp((t - min) / (max - min) * 2 - 1, -1, 1);
     // (this.player.y - minY) / (maxY - minY)
 }
 
@@ -68,6 +68,7 @@ class Game {
         this.reset();
 
         this.reward = 0;
+        this.reward2 = 0;
 
         this.updatePack = new Float32Array(8);
         this.scoreBuf = new Uint16Array(2);
@@ -123,11 +124,14 @@ class Game {
     }
 
     async simulate(){
-        await this.getAIInputs();
+        await this.getAIInputs(this.player);
+        await this.getAIInputs(this.enemy);
 
         this.simulatePlayer(this.player);
         this.simulatePlayer(this.enemy);
 
+        this.reward -= Math.abs(w / 2 - this.player.x) / w;
+        this.reward2 -= Math.abs(w / 2 - this.enemy.x) / w;
         // this.reward -= clamp((this.player.x - w / 2), platform[0].x, platform[1].x) / w * 1/2;
 
         // if(this.enemy.input.up){
@@ -139,17 +143,22 @@ class Game {
         return true;
     }
 
-    async getAIInputs(){
+    async getAIInputs(p=this.enemy){
         if(connected === false){
             await socket.connect("tcp://127.0.0.1:5555");
             connected = true;
             console.log('socket connected!');
         }
 
-        // send a message. When we recieve it we'll do simulation and reward (the below fn)
-        await socket.send(this._getAIInputs());
+        // TODO: idea for further testing: train w/o heavy or canjump and provide reward for agents moving closer to each other + more on collision. Also setInterval change to 0 
+        this.reward = this.player.input.right ? 1 : -1;
+        this.reward2 = this.enemy.input.left ? 1 : -1;
 
-        this.reward = 0;
+        // send a message. When we recieve it we'll do simulation and reward (the below fn)
+        await socket.send(p === this.player ? this._getP1AIInputs() : this._getP2AIInputs());
+
+        // console.log(this.reward.toFixed(2), this.reward2.toFixed(2))
+        this.reward = this.reward2 = 0;
         this.episodeEnded = false;
 
         const [msg] = await socket.receive();  // This gives you a Buffer
@@ -162,41 +171,74 @@ class Game {
         const secondBit = (actionInd & 0x2) !== 0;
         const thirdBit = (actionInd & 0x1) !== 0;
 
-        if(firstBit) this.enemy.input.right = true;
-        else this.enemy.input.left = true;
+        p.input.right = p.input.left = p.input.up = p.input.down = false;
 
-        if(secondBit) this.enemy.input.up = true;
-        else this.enemy.input.down = true;
+        if(firstBit) p.input.right = true;
+        else p.input.left = true;
 
-        if(thirdBit) this.enemy.input.heavy = true;
-        else this.enemy.input.heavy = false;
+        if(secondBit) p.input.up = true;
+        else p.input.down = true;
 
-        this.reward = thirdBit ? 1 : 0;
+        if(thirdBit) p.input.heavy = true;
+        else p.input.heavy = false;
+
+        // this.reward = firstBit ? -1 : 1;
+
+        // p.input.left = p.input.right = false;
+        // if(thirdBit) p.input.left = true;
+        // else p.input.right = true;
     }
 
-    _getAIInputs(){
-        console.log(this.reward);
+    _getP1AIInputs(){
         // len=14
         return Buffer.from(new Float32Array([
-            between(this.player.x, minX, maxX),
-            between(this.player.y, minY, maxY),
+            -1,
+            // between(this.player.x, minX, maxX),
+            // between(this.player.y, minY, maxY),
 
-            between(this.player.xv, -maxV, maxV),
-            between(this.player.yv, -maxV, maxV),
+            // between(this.player.xv, -maxV, maxV),
+            // between(this.player.yv, -maxV, maxV),
 
-            this.player.heavy ? 0 : 1,
-            this.player.canJump ? 0 : 1,
+            // this.player.heavy ? -1 : 1,
+            // this.player.canJump ? -1 : 1,
 
-            between(this.enemy.x, minX, maxX),
-            between(this.enemy.y, minY, maxY),
+            // between(this.enemy.x, minX, maxX),
+            // between(this.enemy.y, minY, maxY),
 
-            between(this.enemy.xv, -maxV, maxV),
-            between(this.enemy.yv, -maxV, maxV),
+            // between(this.enemy.xv, -maxV, maxV),
+            // between(this.enemy.yv, -maxV, maxV),
 
-            this.enemy.heavy ? 0 : 1,
-            this.enemy.canJump ? 0 : 1,
+            // this.enemy.heavy ? -1 : 1,
+            // this.enemy.canJump ? -1 : 1,
 
             this.reward,// last reward
+            this.episodeEnded ? 1 : 0
+        ]).buffer);
+    }
+
+    _getP2AIInputs(){
+        // len=14
+        return Buffer.from(new Float32Array([
+            1,
+            // between(this.enemy.x, minX, maxX),
+            // between(this.enemy.y, minY, maxY),
+
+            // between(this.enemy.xv, -maxV, maxV),
+            // between(this.enemy.yv, -maxV, maxV),
+
+            // this.enemy.heavy ? -1 : 1,
+            // this.enemy.canJump ? -1 : 1,
+
+            // between(this.player.x, minX, maxX),
+            // between(this.player.y, minY, maxY),
+
+            // between(this.player.xv, -maxV, maxV),
+            // between(this.player.yv, -maxV, maxV),
+
+            // this.player.heavy ? -1 : 1,
+            // this.player.canJump ? -1 : 1,
+
+            this.reward2,
             this.episodeEnded ? 1 : 0
         ]).buffer);
     }
@@ -232,58 +274,59 @@ class Game {
         const p = this.player; const e = this.enemy;
         const dist = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
         let col = false;
-        if(dist < p.r + e.r){
-            col = true;
-            const angle = Math.atan2(p.y - e.y, p.x - e.x);
+        // if(dist < p.r + e.r){
+        //     col = true;
+        //     const angle = Math.atan2(p.y - e.y, p.x - e.x);
 
-            const ratio = e.mass / (p.mass + e.mass);
-            const distToMove = (p.r + e.r - dist);
+        //     const ratio = e.mass / (p.mass + e.mass);
+        //     const distToMove = (p.r + e.r - dist);
 
-            let dx = Math.cos(angle) * distToMove * ratio;
-            let dy = Math.sin(angle) * distToMove * ratio;
+        //     let dx = Math.cos(angle) * distToMove * ratio;
+        //     let dy = Math.sin(angle) * distToMove * ratio;
 
-            p.x += dx;
-            p.y += dy;
+        //     p.x += dx;
+        //     p.y += dy;
 
-            dx = Math.cos(angle) * distToMove * (1 - ratio);
-            dy = Math.sin(angle) * distToMove * (1 - ratio);
+        //     dx = Math.cos(angle) * distToMove * (1 - ratio);
+        //     dy = Math.sin(angle) * distToMove * (1 - ratio);
 
-            e.x -= dx;
-            e.y -= dy;
+        //     e.x -= dx;
+        //     e.y -= dy;
 
-            let m1 = p.heavy ? 1.8 : 1;
-            let m2 = e.heavy ? 1.8 : 1;
-            if(p.heavy && e.heavy) m1 = m2 = 1;
+        //     let m1 = p.heavy ? 1.8 : 1;
+        //     let m2 = e.heavy ? 1.8 : 1;
+        //     if(p.heavy && e.heavy) m1 = m2 = 1;
 
-            const Pvec = [
-                p.xv,
-                p.yv
-            ]
+        //     const Pvec = [
+        //         p.xv,
+        //         p.yv
+        //     ]
     
-            const Evec = [
-                e.xv,
-                e.yv
-            ]
+        //     const Evec = [
+        //         e.xv,
+        //         e.yv
+        //     ]
     
-            let [v_x1, v_y1] = rotateVec(Pvec, -angle);
-            let [v_x2, v_y2] = rotateVec(Evec, -angle);
+        //     let [v_x1, v_y1] = rotateVec(Pvec, -angle);
+        //     let [v_x2, v_y2] = rotateVec(Evec, -angle);
     
-            const delta = this.computeDelta(m1, m2, v_x1, v_y1, v_x2, v_y2);
+        //     const delta = this.computeDelta(m1, m2, v_x1, v_y1, v_x2, v_y2);
     
-            v_x1 += delta * m2;
-            v_x2 -= delta * m1;
+        //     v_x1 += delta * m2;
+        //     v_x2 -= delta * m1;
     
-            [v_x1, v_y1] = rotateVec([v_x1, v_y1], angle);
-            [v_x2, v_y2] = rotateVec([v_x2, v_y2], angle);
+        //     [v_x1, v_y1] = rotateVec([v_x1, v_y1], angle);
+        //     [v_x2, v_y2] = rotateVec([v_x2, v_y2], angle);
     
-            p.xv = v_x1;
-            p.yv = v_y1;
+        //     p.xv = v_x1;
+        //     p.yv = v_y1;
 
-            e.xv = v_x2;
-            e.yv = v_y2;
+        //     e.xv = v_x2;
+        //     e.yv = v_y2;
 
-            // this.reward += 0.01;
-        }
+        //     this.reward += 0.1;
+        //     this.reward2 += 0.1;
+        // }
 
         this.boundPlayerFloor(p);
         this.boundPlayerFloor(e);
@@ -297,12 +340,14 @@ class Game {
             if(e.y > 600 && e.yv > 0){
                 this.playerScore++;
 
-                // this.reward -= 10;
+                this.reward -= 10;
+                this.reward2 += 10;
             }
             else if(p.y > 600 && p.yv > 0){
                 this.enemyScore++;
 
-                // this.reward += 10;
+                this.reward += 10;
+                this.reward2 -= 10;
             }
             this.reset()
             this.changedScore = this.episodeEnded = true;
