@@ -29,28 +29,28 @@ global.app = uWS.App().ws('/*', {
         ws.connected = true;
     },
     message: (ws, data) => {
-        // const u8 = new Uint8Array(data);
+        const u8 = new Uint8Array(data);
 
-        // // only 1 message, and it's 1 byte long
+        // only 1 message, and it's 1 byte long
 
-        // if(u8.byteLength !== 1) return;
+        if(u8.byteLength !== 1) return;
 
-        // let byte = u8[0];
-        // const state = (byte & (1 << 6)) !== 0;
-        // byte = byte & (~(1 << 6));
-        // const input = inputToArr[byte];
+        let byte = u8[0];
+        const state = (byte & (1 << 6)) !== 0;
+        byte = byte & (~(1 << 6));
+        const input = inputToArr[byte];
 
-        // if(input !== undefined){
-        //     ws.game.player.input[input] = state;
-        // }
-
-        const f32 = new Float32Array(data);
-
-        if(f32[0] < 0){
-            ws.game.saveToFile = true;
-        } else {
-            delay = f32[0];
+        if(input !== undefined){
+            ws.game.player.input[input] = state;
         }
+
+        // const f32 = new Float32Array(data);
+
+        // if(f32[0] < 0){
+        //     ws.game.saveToFile = true;
+        // } else {
+        //     delay = f32[0];
+        // }
     },
     close: (ws) => {
         ws.connected = false;
@@ -75,6 +75,8 @@ async function simulate(){
 
         const g = clients[key].game;
         await g.simulate();
+
+        if(clients[key] === undefined || clients[key].connected === false) return;
 
         let now = Date.now();
         if(now - lastUpdatePackTime > 1000 / 60){

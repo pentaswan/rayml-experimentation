@@ -102,7 +102,9 @@ class Game {
                 right: false,
                 heavy: false,
                 inverted: false
-            }
+            },
+            agentType: 'ai',
+            outsideBounds: false
         }
         
         this.enemy = structuredClone(this.player);
@@ -113,6 +115,13 @@ class Game {
             this.player.input = structuredClone(lastInputs);
         }
         this.playersTouched = false;
+
+        this.player.agentType = 'human';
+        // if(Math.random() < 0.7) this.player.agentType = 'ai'
+        // else {
+        //     const aiTypes = ['random','stationary','jump','slowright'];
+        //     this.player.agentType = aiTypes[Math.floor(Math.random() * aiTypes.length)];
+        // }
     }
 
     sendUpdatePack(ws){
@@ -149,20 +158,37 @@ class Game {
         this.crTicks++;
 
         if(this.crTicks === 500){
-            const reward = (this.cumulativeReward - this.lastCR) / 1000;
-            console.log(styleText(reward > 0 ? 'green' : 'red', reward.toString()));
-            console.log(this.cumulativeReward / 1000);
+            // const reward = (this.cumulativeReward - this.lastCR) / 1000;
+            // console.log(styleText(reward > 0 ? 'green' : 'red', reward.toString()));
+            // console.log(this.cumulativeReward / 1000);
             this.lastCR = this.cumulativeReward;
             this.crTicks = 0;
             this.cumulativeReward = 0;
         }
 
-        await this.getAIInputs(this.player);
-        this.episodeEnded = false;// so that we only train once
-        this.saveToFile = false;
+        // await this.getAIInputs(this.player);
+
+        // if(this.episodeEnded) console.log('resetting ep!');
+        // this.episodeEnded = false;// so that we only train once
+        // this.saveToFile = false;
+
         await this.getAIInputs(this.enemy);
 
+        // (move above for train), not anymore now we only train on player
+        this.episodeEnded = false;// so that we only train once
+        this.saveToFile = false;
+
         this.reward = this.reward2 = 0;
+
+        if(this.player.outsideBounds){
+            this.reward -= 100;
+            this.player.outsideBounds = false;
+        }
+
+        if(this.enemy.outsideBounds){
+            this.reward2 -= 100;
+            this.enemy.outsideBounds = false;
+        }
 
         this.simulatePlayer(this.player);
         this.simulatePlayer(this.enemy);
@@ -195,40 +221,57 @@ class Game {
         // TODO: idea for further testing: train w/o heavy or canjump and provide reward for agents moving closer to each other + more on collision. Also setInterval change to 0 
 
         // send a message. When we recieve it we'll do simulation and reward (the below fn)
-        const inputs = (p === this.player) ? this._getAIInputs(this.player, this.enemy) : this._getAIInputs(this.enemy, this.player);
-        await socket.send(inputs);
 
-        const [msg] = await socket.receive();  // This gives you a Buffer
-        const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
+        if(p === this.enemy || p.agentType === 'ai'){
+            const inputs = (p === this.player) ? this._getAIInputs(this.player, this.enemy) : this._getAIInputs(this.enemy, this.player);
+            await socket.send(inputs);
 
-        let actionInd = received[0];
+            const [msg] = await socket.receive();  // This gives you a Buffer
+            const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
 
-        // l/r, u/d, h/n
-        const firstBit = (actionInd & 0x2) !== 0;
-        const secondBit = (actionInd & 0x1) !== 0;
-        // const thirdBit = (actionInd & 0x1) !== 0;
+            let actionInd = received[0];
 
-        p.input.right = p.input.left = p.input.up = p.input.down = false;
+            // l/r, u/d
+            let firstBit = (actionInd & 0x2) !== 0;
+            let secondBit = (actionInd & 0x1) !== 0;
 
-        if(firstBit) p.input.right = true;
-        else p.input.left = true;
+            p.input.right = p.input.left = p.input.up = p.input.down = p.input.heavy = false;
 
-        // if(p.input.inverted){
-        //     p.input.right = !p.input.right;
-        //     p.input.left = !p.input.left;
-        // }
+            if(firstBit) p.input.right = true;
+            else p.input.left = true;
 
-        if(secondBit) p.input.up = true;
-        else p.input.down = true;
+            if(secondBit) p.input.up = true;
+            else p.input.down = true;
 
-        // if(thirdBit) p.input.heavy = true;
-        // else p.input.heavy = false;
+            if(p.x < minX){
+                p.input.right = true;
+                p.input.left = false;
+                p.input.up = true;
+                p.input.down = false;
+                p.outsideBounds = true;
+            } else if(p.x > maxX){
+                p.input.left = true;
+                p.input.right = false;
+                p.input.up = true;
+                p.input.down = false;
+                p.outsideBounds = true;
+            }
+        } else {
+            p.input.right = p.input.left = p.input.up = p.input.down = p.input.heavy = false;
+            if(p.agentType === 'random'){
+                if(Math.random() < 0.5) p.input.right = true;
+                else p.input.left = true;
 
-        // this.reward = firstBit ? -1 : 1;
-
-        // p.input.left = p.input.right = false;
-        // if(thirdBit) p.input.left = true;
-        // else p.input.right = true;
+                if(Math.random() < 0.5) p.input.up = true;
+                else p.input.down = true;
+            } else if(p.agentType === 'jump'){
+                if(Math.random() < 0.2) p.input.up = true;
+            } else if(p.agentType === 'slowright'){
+                if(Math.random() < 0.2) p.input.right = true;
+            }// else if(p.agentType === 'stationary'){
+                
+            // }
+        }
     }
 
     _getAIInputs(p=this.player, o=this.enemy){
@@ -252,7 +295,7 @@ class Game {
             inverted ? 1 : -1,
 
             p === this.player ? this.reward : this.reward2,// last reward
-            this.episodeEnded ? 1 : 0,
+            this.episodeEnded && p === this.enemy ? 1 : 0,
             p === this.player ? 0 : 1,
             this.saveToFile ? 1 : 0
         ]).buffer);
@@ -290,6 +333,9 @@ class Game {
         const dist = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
         let col = false;
         if(dist < p.r + e.r){
+            /*if(p.agentType === 'ai')*/ p.input.heavy = p.heavy = true;
+            /*if(e.agentType === 'ai')*/ e.input.heavy = e.heavy = true;
+                
             col = true;
             const angle = Math.atan2(p.y - e.y, p.x - e.x);
 
