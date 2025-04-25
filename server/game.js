@@ -128,8 +128,11 @@ class Game {
         this.simulatePlayer(this.player);
         this.simulatePlayer(this.enemy);
 
-        // this.reward += clamp((this.enemy.x - w / 2), platform[0].x, platform[1].x) / w;
-        this.reward -= clamp((this.player.x - w / 2), platform[0].x, platform[1].x) / w * 1/2;
+        // this.reward -= clamp((this.player.x - w / 2), platform[0].x, platform[1].x) / w * 1/2;
+
+        // if(this.enemy.input.up){
+        //     this.reward -= 100;
+        // }
 
         this.collidePlayers();
 
@@ -152,21 +155,27 @@ class Game {
         const [msg] = await socket.receive();  // This gives you a Buffer
         const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
 
-        // console.log("Got:", received);
+        let actionInd = received[0];
 
-        if(received[0] < 0) this.enemy.input.right = true;
+        // l/r, u/d, h/n
+        const firstBit = (actionInd & 0x4) !== 0;
+        const secondBit = (actionInd & 0x2) !== 0;
+        const thirdBit = (actionInd & 0x1) !== 0;
+
+        if(firstBit) this.enemy.input.right = true;
         else this.enemy.input.left = true;
 
-        if(received[1] < 0) this.enemy.input.up = true;
+        if(secondBit) this.enemy.input.up = true;
         else this.enemy.input.down = true;
 
-        if(received[2] > 0) this.enemy.input.heavy = true;
+        if(thirdBit) this.enemy.input.heavy = true;
         else this.enemy.input.heavy = false;
 
-        // console.log(received);
+        this.reward = thirdBit ? 1 : 0;
     }
 
     _getAIInputs(){
+        console.log(this.reward);
         // len=14
         return Buffer.from(new Float32Array([
             between(this.player.x, minX, maxX),
@@ -273,7 +282,7 @@ class Game {
             e.xv = v_x2;
             e.yv = v_y2;
 
-            this.reward += 0.01;
+            // this.reward += 0.01;
         }
 
         this.boundPlayerFloor(p);
@@ -288,12 +297,12 @@ class Game {
             if(e.y > 600 && e.yv > 0){
                 this.playerScore++;
 
-                this.reward -= 10;
+                // this.reward -= 10;
             }
             else if(p.y > 600 && p.yv > 0){
                 this.enemyScore++;
 
-                this.reward += 10;
+                // this.reward += 10;
             }
             this.reset()
             this.changedScore = this.episodeEnded = true;

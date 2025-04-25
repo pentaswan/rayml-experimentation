@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node ./server/index.js",
-    "py": "python ./server/env.py"
+    "py": "python ./server/ppo.py"
   },
   "type": "module",
   "author": "",
