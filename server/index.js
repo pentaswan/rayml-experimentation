@@ -46,7 +46,11 @@ global.app = uWS.App().ws('/*', {
 
         const f32 = new Float32Array(data);
 
-        delay = f32[0];
+        if(f32[0] < 0){
+            ws.game.saveToFile = true;
+        } else {
+            delay = f32[0];
+        }
     },
     close: (ws) => {
         ws.connected = false;

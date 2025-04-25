@@ -82,6 +82,8 @@ class Game {
         this.cumulativeReward = 0;
         this.crTicks = 0;
         this.lastCR = 0;
+
+        this.saveToFile = false;
     }
 
     reset(){
@@ -157,6 +159,7 @@ class Game {
 
         await this.getAIInputs(this.player);
         this.episodeEnded = false;// so that we only train once
+        this.saveToFile = false;
         await this.getAIInputs(this.enemy);
 
         this.reward = this.reward2 = 0;
@@ -169,6 +172,7 @@ class Game {
 
         this.reward += 1 + this.tick / 3000;
         this.reward2 += 1 + this.tick / 3000;
+
 
         // this.reward -= clamp((this.player.x - w / 2), platform[0].x, platform[1].x) / w * 1/2;
 
@@ -250,6 +254,7 @@ class Game {
             p === this.player ? this.reward : this.reward2,// last reward
             this.episodeEnded ? 1 : 0,
             p === this.player ? 0 : 1,
+            this.saveToFile ? 1 : 0
         ]).buffer);
     }
 

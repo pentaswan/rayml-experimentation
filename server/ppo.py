@@ -176,6 +176,12 @@ if __name__ == "__main__":
     agent = Agent(envs).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
+    # # Load prev model
+    checkpoint = torch.load('models.pth')
+    agent.critic.load_state_dict(checkpoint['critic'])
+    agent.actor.load_state_dict(checkpoint['actor'])
+    print('loaded model')
+
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
     actions = torch.zeros((args.num_steps, args.num_envs) + envs.single_action_space.shape).to(device)
@@ -391,6 +397,15 @@ if __name__ == "__main__":
                 toTrain = arr[10] == 1
 
                 agentNum = int(arr[11])
+
+                save_to_file = arr[12]
+
+                if save_to_file:
+                    torch.save({
+                        'critic': agent.critic.state_dict(),
+                        'actor': agent.actor.state_dict()
+                    }, 'models.pth')
+                    print('saved successfully!')
 
                 action = run_ppo_iter(arr, toTrain, agentNum)
 

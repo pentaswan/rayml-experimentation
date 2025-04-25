@@ -45,7 +45,13 @@ function handleKey(e){
 
 function speed(spd=1000/60){
     const f32 = new Float32Array(1);
-    f32[0] = frameTime = spd;
+    f32[0] = frameTime = Math.max(0, spd);
+    send(f32);
+}
+
+function save(){
+    const f32 = new Float32Array(1);
+    f32[0] = -1;
     send(f32);
 }
 
