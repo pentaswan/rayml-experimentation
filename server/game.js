@@ -143,28 +143,30 @@ class Game {
             send(ws, this.scoreBuf);
             this.changedScore = false;
         }
+
+        this.enemy.heavy = this.enemy.input.heavy = false;
     }
 
     async simulate(){
         // console.log(Math.round(this.reward * 100) / 100);// Math.round(this.reward2 * 100) / 100
-        this.tick++;
-        if(this.tick > 500) {
-            this.reset();
-            this.cumulativeReward = 0;
-            this.episodeEnded = true;
-        }
+        // this.tick++;
+        // if(this.tick > 500) {
+        //     this.reset();
+        //     this.cumulativeReward = 0;
+        //     this.episodeEnded = true;
+        // }
 
-        this.cumulativeReward += /*this.reward +*/ this.reward2;
-        this.crTicks++;
+        // this.cumulativeReward += /*this.reward +*/ this.reward2;
+        // this.crTicks++;
 
-        if(this.crTicks === 500){
-            // const reward = (this.cumulativeReward - this.lastCR) / 1000;
-            // console.log(styleText(reward > 0 ? 'green' : 'red', reward.toString()));
-            // console.log(this.cumulativeReward / 1000);
-            this.lastCR = this.cumulativeReward;
-            this.crTicks = 0;
-            this.cumulativeReward = 0;
-        }
+        // if(this.crTicks === 500){
+        //     // const reward = (this.cumulativeReward - this.lastCR) / 1000;
+        //     // console.log(styleText(reward > 0 ? 'green' : 'red', reward.toString()));
+        //     // console.log(this.cumulativeReward / 1000);
+        //     this.lastCR = this.cumulativeReward;
+        //     this.crTicks = 0;
+        //     this.cumulativeReward = 0;
+        // }
 
         // await this.getAIInputs(this.player);
 
@@ -235,7 +237,7 @@ class Game {
             let firstBit = (actionInd & 0x2) !== 0;
             let secondBit = (actionInd & 0x1) !== 0;
 
-            p.input.right = p.input.left = p.input.up = p.input.down = p.input.heavy = false;
+            p.input.right = p.input.left = p.input.up = p.input.down = false;
 
             if(firstBit) p.input.right = true;
             else p.input.left = true;
@@ -257,7 +259,7 @@ class Game {
                 p.outsideBounds = true;
             }
         } else {
-            p.input.right = p.input.left = p.input.up = p.input.down = p.input.heavy = false;
+            p.input.right = p.input.left = p.input.up = p.input.down = false;
             if(p.agentType === 'random'){
                 if(Math.random() < 0.5) p.input.right = true;
                 else p.input.left = true;
@@ -333,7 +335,7 @@ class Game {
         const dist = Math.sqrt((p.x - e.x) ** 2 + (p.y - e.y) ** 2);
         let col = false;
         if(dist < p.r + e.r){
-            /*if(p.agentType === 'ai')*/ p.input.heavy = p.heavy = true;
+            /*if(p.agentType === 'ai')*/ //p.input.heavy = p.heavy = true;
             /*if(e.agentType === 'ai')*/ e.input.heavy = e.heavy = true;
                 
             col = true;

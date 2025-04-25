@@ -65,11 +65,11 @@ global.app = uWS.App().ws('/*', {
     }
 }, );
 
-// let lastDone = true;
-let delay = 0;
+let lastDone = true;
+// let delay = 0;
 let lastUpdatePackTime = 0;
 async function simulate(){
-    // lastDone = false;
+    lastDone = false;
     for(let key in clients){
         if(clients[key].connected === false) return;
 
@@ -85,18 +85,18 @@ async function simulate(){
         }
     }
 
-    // lastDone = true;
+    lastDone = true;
 
-    if(delay === 0){
-        setImmediate(simulate);
-    } else {
-        setTimeout(simulate, delay);
-    }
+    // if(delay === 0){
+    //     setImmediate(simulate);
+    // } else {
+    //     setTimeout(simulate, delay);
+    // }
 }
 
-// setInterval(() => {
-//     if(lastDone) simulate();
-// }, 1000 / 60)
+setInterval(() => {
+    if(lastDone) simulate();
+}, 1000 / 120)// 2x sim to update speed!
 
 simulate();
 
