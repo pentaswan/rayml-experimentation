@@ -70,20 +70,31 @@ let lastDone = true;
 let lastUpdatePackTime = 0;
 async function simulate(){
     lastDone = false;
+
+    let promises = [];
     for(let key in clients){
         if(clients[key].connected === false) return;
 
-        const g = clients[key].game;
-        await g.simulate();
+        promises.push(new Promise(async (res) => {
+            const g = clients[key].game;
+            await g.simulate();
+    
+            if(clients[key] === undefined || clients[key].connected === false) {
+                res();
+                return;
+            }
+    
+            let now = Date.now();
+            if(now - lastUpdatePackTime > 1000 / 60){
+                g.sendUpdatePack(clients[key]);
+                lastUpdatePackTime = now;
+            }
 
-        if(clients[key] === undefined || clients[key].connected === false) return;
-
-        let now = Date.now();
-        if(now - lastUpdatePackTime > 1000 / 60){
-            g.sendUpdatePack(clients[key]);
-            lastUpdatePackTime = now;
-        }
+            res();
+        }));
     }
+
+    await Promise.all(promises);
 
     lastDone = true;
 
