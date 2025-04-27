@@ -67,34 +67,34 @@ global.app = uWS.App().ws('/*', {
 
 let lastDone = true;
 // let delay = 0;
-let lastUpdatePackTime = 0;
+// let lastUpdatePackTime = 0;
 async function simulate(){
     lastDone = false;
 
-    let promises = [];
+    // let promises = [];
     for(let key in clients){
         if(clients[key].connected === false) return;
 
-        promises.push(new Promise(async (res) => {
+        // promises.push(new Promise(async (res) => {
             const g = clients[key].game;
             await g.simulate();
     
-            if(clients[key] === undefined || clients[key].connected === false) {
-                res();
-                return;
-            }
+            // if(clients[key] === undefined || clients[key].connected === false) {
+            //     res();
+            //     return;
+            // }
     
-            let now = Date.now();
-            if(now - lastUpdatePackTime > 1000 / 60){
+            // let now = Date.now();
+            // if(now - lastUpdatePackTime > 1000 / 60){
                 g.sendUpdatePack(clients[key]);
-                lastUpdatePackTime = now;
-            }
+            //     lastUpdatePackTime = now;
+            // }
 
-            res();
-        }));
+        //     res();
+        // }));
     }
 
-    await Promise.all(promises);
+    // await Promise.all(promises);
 
     lastDone = true;
 
