@@ -26,6 +26,8 @@ global.app = uWS.App().ws('/*', {
         ws.id = generateId();
         clients[ws.id] = ws;
 
+        ws.timeCreated = Date.now();
+
         ws.connected = true;
     },
     message: (ws, data) => {
@@ -68,33 +70,29 @@ global.app = uWS.App().ws('/*', {
 let lastDone = true;
 // let delay = 0;
 // let lastUpdatePackTime = 0;
+let now = Date.now();
+let maxTime = 5000//60 * 60 * 1000; // 1 hour
 async function simulate(){
+    now = Date.now();
     lastDone = false;
 
-    // let promises = [];
     for(let key in clients){
-        if(clients[key].connected === false) return;
+        if(clients[key].connected === false) {delete clients[key]; continue;}
 
-        // promises.push(new Promise(async (res) => {
-            const g = clients[key].game;
-            await g.simulate();
-    
-            // if(clients[key] === undefined || clients[key].connected === false) {
-            //     res();
-            //     return;
-            // }
-    
-            // let now = Date.now();
-            // if(now - lastUpdatePackTime > 1000 / 60){
-                g.sendUpdatePack(clients[key]);
-            //     lastUpdatePackTime = now;
-            // }
+        if(now - ws.timeCreated > maxTime){
+            clients[key].close();
+            continue;
+        }
 
-        //     res();
-        // }));
+        const g = clients[key].game;
+        await g.simulate();
+
+        if(clients[key] === undefined || clients[key].connected === false) {
+            continue;
+        }
+
+        g.sendUpdatePack(clients[key]);
     }
-
-    // await Promise.all(promises);
 
     lastDone = true;
 
@@ -107,7 +105,7 @@ async function simulate(){
 
 setInterval(() => {
     if(lastDone) simulate();
-}, 1000 / 60)// 2x sim to update speed!
+}, 1000 / 60)
 
 simulate();
 
