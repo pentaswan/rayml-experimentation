@@ -395,18 +395,21 @@ if __name__ == "__main__":
                 msg = socket.recv()
                 arr = np.frombuffer(msg, dtype=np.float32)
 
+                print('recieving inputs!')
+                print(arr)
+
                 toTrain = arr[10] == 1
 
                 agentNum = int(arr[11])
 
-                save_to_file = arr[12]
+                # save_to_file = arr[12]
 
-                if save_to_file:
-                    torch.save({
-                        'critic': agent.critic.state_dict(),
-                        'actor': agent.actor.state_dict()
-                    }, 'models.pth')
-                    print('saved successfully!')
+                # if save_to_file:
+                #     torch.save({
+                #         'critic': agent.critic.state_dict(),
+                #         'actor': agent.actor.state_dict()
+                #     }, 'models.pth')
+                #     print('saved successfully!')
 
                 action = run_ppo_iter(arr, toTrain, agentNum)
 

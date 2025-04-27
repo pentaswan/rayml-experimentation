@@ -5,6 +5,14 @@ import { styleText } from 'node:util';
 let connected = false;
 const socket = new Request();
 
+async function connect(){
+    await socket.connect("tcp://127.0.0.1:5555");
+    connected = true;
+    console.log('socket connected!');
+}
+
+connect();
+
 const w = 1600;
 const h = 900;
 
@@ -214,11 +222,7 @@ class Game {
     }
 
     async getAIInputs(p=this.enemy){
-        if(connected === false){
-            await socket.connect("tcp://127.0.0.1:5555");
-            connected = true;
-            console.log('socket connected!');
-        }
+        if(connected === false) return;
 
         // TODO: idea for further testing: train w/o heavy or canjump and provide reward for agents moving closer to each other + more on collision. Also setInterval change to 0 
 
@@ -228,8 +232,12 @@ class Game {
             const inputs = (p === this.player) ? this._getAIInputs(this.player, this.enemy) : this._getAIInputs(this.enemy, this.player);
             await socket.send(inputs);
 
+            console.log('sent', inputs, 'waiting to recieve!');
+
             const [msg] = await socket.receive();  // This gives you a Buffer
             const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
+
+            console.log('recieved inputs!', received[0]);
 
             let actionInd = received[0];
 
