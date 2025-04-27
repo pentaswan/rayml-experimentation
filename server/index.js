@@ -71,7 +71,7 @@ let lastDone = true;
 // let delay = 0;
 // let lastUpdatePackTime = 0;
 let now = Date.now();
-let maxTime = 5000//60 * 60 * 1000; // 1 hour
+let maxTime = 60 * 60 * 1000; // 1 hour
 async function simulate(){
     now = Date.now();
     lastDone = false;

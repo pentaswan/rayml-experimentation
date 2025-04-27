@@ -35,6 +35,6 @@ ws.onopen = () => {
 ws.onclose = () => {
     connected = false;
     console.error('disconnected from server!');
-    // alert('disconnected from server.');
+    alert('disconnected from server.');
     window.send = () => {};
 }
