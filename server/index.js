@@ -107,7 +107,7 @@ async function simulate(){
 
 setInterval(() => {
     if(lastDone) simulate();
-}, 1000 / 120)// 2x sim to update speed!
+}, 1000 / 60)// 2x sim to update speed!
 
 simulate();
 

@@ -241,13 +241,9 @@ if __name__ == "__main__":
         actions[step] = action
         logprobs[step] = logprob
 
-        print('getting action and logprob')
-
         # TRY NOT TO MODIFY: execute the game and log data.
         # next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
         next_ob, single_reward, terminated, truncated, info = env.step(action.cpu().numpy())
-
-        print('stepped env')
 
         # converting into np arrays but stepping a single agent at a time bc we want run run multiple in parallel.
         next_obs = np.array([next_ob], dtype=np.float32)
@@ -256,8 +252,6 @@ if __name__ == "__main__":
         next_done = np.array([terminated or truncated], dtype=bool) # np.logical_or(terminations, truncations)
         rewards[step] = torch.tensor(reward).to(device).view(-1)
         next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
-
-        print('other stuff')
 
         # if "final_info" in infos:
         #     for info in infos["final_info"]:
@@ -415,12 +409,7 @@ if __name__ == "__main__":
                 #     }, 'models.pth')
                 #     print('saved successfully!')
 
-                print('getting data and running')
-                print(arr)
                 action = run_ppo_iter(arr, toTrain, agentNum)
-
-                print('sending data back')
-                print(action)
 
                 socket.send(action.numpy().astype(np.float32).tobytes())
 

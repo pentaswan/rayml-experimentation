@@ -232,12 +232,12 @@ class Game {
             const inputs = (p === this.player) ? this._getAIInputs(this.player, this.enemy) : this._getAIInputs(this.enemy, this.player);
             await socket.send(inputs);
 
-            console.log('sent', inputs, 'waiting to recieve!');
+            // console.log('sent', inputs, 'waiting to recieve!');
 
             const [msg] = await socket.receive();  // This gives you a Buffer
             const received = new Float32Array(msg.buffer, msg.byteOffset, msg.length / 4);
 
-            console.log('recieved inputs!', received[0]);
+            // console.log('recieved inputs!', received[0]);
 
             let actionInd = received[0];
 
