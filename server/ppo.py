@@ -253,7 +253,7 @@ if __name__ == "__main__":
         next_obs = np.array([next_ob], dtype=np.float32)
         reward = np.array([single_reward], dtype=np.float32)
 
-        next_done = np.array([terminated or truncated], dtype=np.bool) # np.logical_or(terminations, truncations)
+        next_done = np.array([terminated or truncated], dtype=bool) # np.logical_or(terminations, truncations)
         rewards[step] = torch.tensor(reward).to(device).view(-1)
         next_obs, next_done = torch.Tensor(next_obs).to(device), torch.Tensor(next_done).to(device)
 
