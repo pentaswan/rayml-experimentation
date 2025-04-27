@@ -79,7 +79,7 @@ async function simulate(){
     for(let key in clients){
         if(clients[key].connected === false) {delete clients[key]; continue;}
 
-        if(now - ws.timeCreated > maxTime){
+        if(now - clients[key].timeCreated > maxTime){
             clients[key].close();
             continue;
         }
