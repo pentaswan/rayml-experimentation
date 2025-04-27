@@ -52,6 +52,10 @@ function render() {
     renderLine(platform);
 
     renderScore();
+
+    if(isMobile){
+        drawButtons()
+    }
 }
 
 let frameTime = 1000 / 60;
@@ -96,3 +100,128 @@ function renderScore(){
 }
 
 requestAnimationFrame(render);
+
+// TODO: mobile controls
+
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+const xMin = 0.11;
+const yMax = 0.94;
+const ySpacing = 0.07;
+const btnR = 0.045;
+let buttons = [{
+    text: 'A',
+    xPercent: 1 / 3,
+    yPercent: yMax - ySpacing,
+    rPercent: btnR,
+    clicking: false
+}, {
+    text: 'D',
+    xPercent: 2 / 3,
+    yPercent: yMax - ySpacing,
+    rPercent: btnR,
+    clicking: false
+}, {
+    text: 'W',
+    xPercent: 1 / 2,
+    yPercent: yMax - ySpacing * 2,
+    rPercent: btnR,
+    clicking: false
+}, {
+    text: 'S',
+    xPercent: 1 / 2,
+    yPercent: yMax,
+    rPercent: btnR,
+    clicking: false
+}, {
+    text: 'X',
+    xPercent: xMin,
+    yPercent: yMax,
+    rPercent: btnR,
+    clicking: false
+}];
+
+let c2, c2x;
+if(isMobile){
+    c2 = document.createElement('canvas');
+    c2x = c2.getContext('2d');
+    c2.style.zIndex = '999';
+    document.body.appendChild(c2);
+}
+
+function drawButtons(){
+    c2x.clearRect(0,0,c2.w,c2.h);
+    for(let i = 0; i < buttons.length; i++){
+        drawButton(buttons[i]);
+    }
+}
+
+function drawButton(b){
+    const {clicking, xPercent, yPercent, rPercent, text} = b;
+    const coords = {x: xPercent * innerWidth, y: yPercent * innerHeight};
+    const rCoords = {x: xPercent * innerWidth, y: (yPercent + rPercent) * innerHeight};
+    const btnR = rCoords.y - coords.y;
+
+    c2x.fillStyle = 'blue';
+    c2x.globalAlpha = clicking ? .56 : .3;
+
+    c2x.beginPath();
+    c2x.arc(coords.x, coords.y, btnR, 0, Math.PI * 2);
+    c2x.fill();
+    c2x.closePath();
+
+    c2x.globalAlpha *= 1.79;
+
+    c2x.fillStyle = '#f0f0f0';
+    c2x.textAlign = 'center';
+    c2x.textBaseline = 'middle';
+    c2x.font = `700 120px Monospace`;
+    c2x.fillText(text, coords.x, coords.y);
+
+    c2x.globalAlpha = 1;
+}
+
+let idToBtn = {
+
+}
+if(isMobile) {
+    window.addEventListener("touchstart", (e) => {
+        for(let i = 0; i < e.changedTouches.length; i++){
+            const t = e.changedTouches[i];
+
+            for(let i = 0; i < buttons.length; i++){
+                const {clicking, xPercent, yPercent, rPercent, text} = buttons[i];
+                const coords = {x: xPercent * innerWidth, y: yPercent * innerHeight};
+
+                // console.log(t.x, t.y);
+                let mag = Math.sqrt((t.clientX - coords.x) ** 2 + (t.clientY - coords.y) ** 2);
+                if(mag <= rPercent * innerHeight){
+                    buttons[i].clicking = true;
+                    idToBtn[t.identifier] = i;
+
+                    const code = ['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyX'][i];
+                    handleKey({preventDefault:()=>{}, code, type: 'keydown'})
+                    return;
+                }
+            }
+        }
+    });
+    // window.addEventListener("touchmove", (e) => {
+        
+    // }, {passive: false});
+    window.addEventListener("touchend", (e) => {
+        for(let i = 0; i < e.changedTouches.length; i++){
+            const t = e.changedTouches[i];
+
+            const btnId = idToBtn[t.identifier];
+            if(btnId !== undefined){
+                buttons[btnId].clicking = false;
+                delete idToBtn[t.identifier];
+
+                const code = ['KeyA', 'KeyD', 'KeyW', 'KeyS', 'KeyX'][btnId];
+                handleKey({preventDefault:()=>{}, code, type: 'keyup'});
+            }
+        }
+    });
+    window.onmousedown = window.onmouseup = window.onmousemove = () => {};
+}

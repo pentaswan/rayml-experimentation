@@ -67,6 +67,11 @@ function resize(){
     resizeElement(canvas);
     canvas.w = canvas.width;
     canvas.h = canvas.height;
+
+    if(c2){
+        c2.width = c2.w = window.innerWidth;
+        c2.height = c2.h = window.innerHeight;
+    }
 }
 
 const width = 1600;
